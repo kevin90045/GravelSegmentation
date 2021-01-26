@@ -12,7 +12,7 @@ import utils
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--path', type=str, help='Path to original scene file. Support h5, npy, xyz formats. Can be a file path or directory')
-parser.add_argument('--pred', type=str, help='Path to prediction files from Tester. Can be a file path or directory')
+parser.add_argument('--pred', type=str, default=None, help='Path to prediction files from Tester. Can be a file path or directory')
 parser.add_argument('--model', type=str, default=None, help='Path to model file (*.ckpt)')
 parser.add_argument('--batch_size', type=int, default=1, help='Batch size during inference. Ignored when using Iterative Prediction')
 parser.add_argument('--iter', help='Use Iterative Prediction', action="store_true")
@@ -71,7 +71,10 @@ if EVAL:
         from datetime import datetime
         from evaluator import Evaluator, EvaluationLogger
         EVALUATOR = Evaluator
-        EVALUATION_LOGGER = EvaluationLogger(datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".csv", "w")
+
+        output_filename = "{}_{}_{}_{}_{}.csv".format(basename(PATH), CELL_SIZE, OVERLAP_CELL_THRES, IOU_THRES, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+        logger_name = join(dirname(PATH), output_filename)
+        EVALUATION_LOGGER = EvaluationLogger(logger_name, "w")
     except Exception as e:
         print(e)
 
@@ -300,6 +303,7 @@ def process_original_scene(scene_data, pred_filename, output_dir='.'):
         if EVALUATION_LOGGER is not None:
             num_ins_gt = np.sum(np.unique(scene_data[:, -1]) != -1)
             log = {
+                "pred_file": pred_filename,
                 "num_pts": len(scene_data),
                 "num_pts_pred": len(scene_data[labeled_cond, :]),
                 "num_ins_pred": num_ins_pred,
@@ -375,6 +379,7 @@ def process_scene_blocks(blocks, pred_filename, output_dir='.'):
         if EVALUATION_LOGGER is not None:
             num_ins_gt = np.sum(np.unique(ins_gt_all) != -1)
             log = {
+                "pred_file": pred_filename,
                 "num_pts": len(data),
                 "num_ins_pred": num_ins_pred,
                 "num_ins_gt": num_ins_gt,
@@ -409,7 +414,8 @@ if __name__ == "__main__":
     # Start processing
     print("Total number of files: {}\n".format(len(filenames)))
 
-    for filename in filenames:
+    for i, filename in enumerate(filenames):
+        print("[{}/{}]".format(i+1, len(filenames)))
         print("Processing", filename)
         output_dir = dirname(abspath(filename))
         pred_filename = predictions[filename]
