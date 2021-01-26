@@ -5,6 +5,7 @@ import argparse
 from datetime import datetime
 from functools import partial
 import multiprocessing as mp
+from concurrent import futures
 
 import h5py
 import numpy as np
@@ -28,7 +29,7 @@ parser.add_argument("--bound", nargs="+", type=float, default=[-sys.float_info.m
 parser.add_argument("--format", type=str, default="h5", help="data format")
 parser.add_argument("--idis", help="use inverse density importance sampling", action="store_true")
 parser.add_argument("-mp", "--multiprocessing", help="use multiprocessing or not", action="store_true")
-parser.add_argument("--num_workers", type=int, default=None, help="threads used for multiprocessing") 
+parser.add_argument("--num_workers", type=int, default=1, help="threads used for multiprocessing") 
 parser.add_argument("--start_index", type=int, default=0, help="the startig index of output file")
 parser.add_argument("--save_original", help="save original scene data as h5", action="store_true")
 args = parser.parse_args()
@@ -84,7 +85,7 @@ def print_log(log_str):
     print("{} - {}".format(datetime.now(), log_str))
 
 
-def scene_to_blocks(scene_data, num_points, size=1.0, stride=0.5, threshold=100, use_idis=False, pool=None):
+def scene_to_blocks(scene_data, num_points, size=1.0, stride=0.5, threshold=100, use_idis=False, use_multiprocessing=False, num_workers=1):
     """Convert scene points to blocks
 
     Args:
@@ -119,8 +120,10 @@ def scene_to_blocks(scene_data, num_points, size=1.0, stride=0.5, threshold=100,
             continue
         blocks.append(block)
 
-    if pool is not None:
-        blocks = pool.map(partial(DataUtils.sample_data, num_samples=num_points, min_instance_points_num=50, use_idis=use_idis), blocks)
+    if use_multiprocessing:
+        chunksize = len(blocks) // num_workers
+        with futures.ProcessPoolExecutor(num_workers) as pool:
+            blocks = list(pool.map(partial(DataUtils.sample_data, num_samples=num_points, min_instance_points_num=50, use_idis=use_idis), blocks, chunksize=chunksize))
     else:
         for block_id, block in enumerate(blocks):
             blocks[block_id] = DataUtils.sample_data(block, num_points, min_instance_points_num=50, use_idis=use_idis)
@@ -197,15 +200,10 @@ if __name__ == "__main__":
     scene_count = START_INDEX
     logger = Logger()
 
-    # create pool for multiprocessing
-    if USE_MULTIPROCESSING:
-        pool = mp.Pool() if NUM_WORKERS is None else mp.Pool(processes=NUM_WORKERS)
-    else:
-        pool = None
-
     # start processing
     failed_scenes = []
-    for scene_path in all_scene_paths:
+    for i, scene_path in enumerate(all_scene_paths):
+        print("[{}/{}]".format(i+1, len(all_scene_paths)))
         # load scene data
         try:
             if LOAD_DIR:
@@ -222,7 +220,7 @@ if __name__ == "__main__":
             print_log("Number of total points: {}".format(scene_data.shape[0]))
 
             # scene to blocks
-            blocks = scene_to_blocks(scene_data, NUM_POINT, BLOCK_SIZE, STRIDE, 1, USE_IDIS, pool)
+            blocks = scene_to_blocks(scene_data, NUM_POINT, BLOCK_SIZE, STRIDE, 1, USE_IDIS, USE_MULTIPROCESSING, NUM_WORKERS)
             print_log("Number of points after sampling: {}".format(blocks.shape[0] * blocks.shape[1]))
             
             # output
