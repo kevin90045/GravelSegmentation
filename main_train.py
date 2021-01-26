@@ -68,7 +68,7 @@ def train(net: BoNet, train_data: DataLoader, test_data: DataLoader):
             # get training data
             bat_pc, _, bat_bbvert, bat_pmask = train_data.get_batch()
 
-            # check batch size because the last batch may not be split to multiple GPUs
+            # check batch size because the last batch may not be split to multiple GPUs equally
             if len(bat_pc) % NUM_GPUS != 0:
                 print("bat_pc :", bat_pc.shape)
                 continue
@@ -86,7 +86,7 @@ def train(net: BoNet, train_data: DataLoader, test_data: DataLoader):
                 })
 
             # training summary
-            if i != 0 and (i % 200 == 0 or i == total_train_batch_num - 1):
+            if i % 100 == 0 or i == total_train_batch_num - 1:
                 sum_train = net.sess.run(
                     net.sum_merged,
                     feed_dict={
@@ -100,8 +100,14 @@ def train(net: BoNet, train_data: DataLoader, test_data: DataLoader):
             print('ep', ep, 'i', i, 'bbvert', ls_bbvert, 'l2', ls_bbvert_l2, 'ce', ls_bbvert_ce, 'iou', ls_bbvert_iou, 'bbscore', ls_bbscore, 'pmask', ls_pmask, 'total', ls_total)
 
             # random testing and summary
-            if i != 0 and (i % 200 == 0 or i == total_train_batch_num - 1):
+            if i % 100 == 0 or i == total_train_batch_num - 1:
                 bat_pc, _, bat_bbvert, bat_pmask = test_data.get_batch()
+                
+                # check batch size because the last batch may not be split to multiple GPUs equally
+                if len(bat_pc) % NUM_GPUS != 0:
+                    print("bat_pc :", bat_pc.shape)
+                    continue
+
                 ls_bbvert_all, ls_bbvert_l2, ls_bbvert_ce, ls_bbvert_iou, ls_bbscore, ls_pmask, sum_test, pred_bborder = net.sess.run(
                     [
                         net.bbvert_loss, net.bbvert_loss_l2,
@@ -111,7 +117,7 @@ def train(net: BoNet, train_data: DataLoader, test_data: DataLoader):
                     feed_dict={
                         net.X_pc: bat_pc[:, :, 0:6],
                         net.Y_bbvert: bat_bbvert,
-                        net.Y_pmask: bat_pmaskrain: False
+                        net.Y_pmask: bat_pmask
                     })
                 net.sum_write_test.add_summary(sum_test, ep * total_train_batch_num + i)
                 print('ep', ep, 'i', i, 'bbvert', ls_bbvert_all, 'l2', ls_bbvert_l2, 'ce', ls_bbvert_ce, 'iou', ls_bbvert_iou, 'bbscore', ls_bbscore, 'pmask', ls_pmask)
