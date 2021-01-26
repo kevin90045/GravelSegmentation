@@ -1,6 +1,7 @@
 .vscode/
 *.pyc
 *.csv
+*.txt
 train.sh
 eval.sh
 prepare_data.sh
