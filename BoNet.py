@@ -1,8 +1,6 @@
 
 import os
-import glob
 import shutil
-from typing import Tuple
 
 import tensorflow as tf
 
