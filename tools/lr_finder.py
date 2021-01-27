@@ -1,4 +1,5 @@
-### https://sgugger.github.io/how-do-you-find-a-good-learning-rate.html
+"""Modified from: https://sgugger.github.io/how-do-you-find-a-good-learning-rate.html
+"""
 import os
 import shutil
 import sys

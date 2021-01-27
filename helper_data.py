@@ -31,6 +31,8 @@ class DataConfigs:
 
 class DataLoader:
     """Data loader for getting batch data
+    
+    Modified from: https://github.com/dlinzhao/JSNet/blob/master/utils/s3dis_utils/dataset_s3dis.py
     """
     def __init__(self,
                  dataset_path=".",
