@@ -72,7 +72,7 @@ if EVAL:
         from evaluator import Evaluator, EvaluationLogger
         EVALUATOR = Evaluator
 
-        output_filename = "{}_{}_{}_{}_{}.csv".format(basename(PATH), CELL_SIZE, OVERLAP_CELL_THRES, IOU_THRES, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+        output_filename = "{}_{}_{}_{}_{}.csv".format(splitext(basename(PATH))[0], CELL_SIZE, OVERLAP_CELL_THRES, IOU_THRES, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
         logger_name = join(dirname(PATH), output_filename)
         EVALUATION_LOGGER = EvaluationLogger(logger_name, "w")
     except Exception as e:
