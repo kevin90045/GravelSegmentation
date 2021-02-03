@@ -2,6 +2,7 @@
 *.pyc
 *.csv
 *.txt
+legacy/
 train.sh
 eval.sh
 prepare_data.sh
