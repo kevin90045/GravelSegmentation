@@ -106,24 +106,25 @@ def get_filenames(path: str, exts=['h5']):
         return list()
 
 
-def get_predictions(filenames: list, predictions: list):
-    """Get file-prediction dict
+def get_input_pairs(filenames: list, predictions: list):
+    """Get filename-prediction dict
 
     Args:
         filenames (list): File paths.
         predictions (list): Paths of prediction files. Notice that only the prediction filename that contains filename and 'blocks_pred' will be considered.
 
     Returns:
-        dict: Keys are filenames, values are predictions. If a file has no corresponding prediction file, the value will be None.
+        dict: Key are filename, value is a list of predictions. If a file has no corresponding prediction file, the value will be None.
     """
     results = dict()
 
     if len(filenames) == len(predictions) == 1:
-        results[filenames[0]] = predictions[0]
+        results[filenames[0]] = [predictions[0]]
         return results
 
+    # matching method: in default, the prediction files saved by Tester will be named "filename_blocks_pred.h5" 
     for filename in filenames:
-        results[filename] = None
+        results[filename] = [None]
 
         search_str = splitext(basename(filename))[0]
         search_str = search_str.replace("_original", "")
@@ -131,8 +132,10 @@ def get_predictions(filenames: list, predictions: list):
             target_str = basename(pred)
 
             if search_str in target_str and "blocks_pred" in target_str:
-                results[filename] = pred
-                break
+                if len(results[filename]) == 1 and results[filename][0] is None:
+                    results[filename] = [pred]
+                else:
+                    results[filename] += [pred]
     
     return results
 
@@ -246,8 +249,9 @@ def eval(xyz: np.ndarray, ins_gt: np.ndarray, ins_pred: np.ndarray):
     return evaluator.evaluate(ins_pred)
 
 
-def process_original_scene(scene_data, pred_filename, output_dir='.'):
+def process_original_scene(filename: str, pred_filename: str, output_dir='.'):
     print("Start original scene file processing")
+    scene_data = DataUtils.load_scene_file(filename)
 
     if not SAVE_PLY and not SAVE_INS and not EVAL:
         print("No task to do. Use --save_ply, --save_ins or --eval")
@@ -303,6 +307,7 @@ def process_original_scene(scene_data, pred_filename, output_dir='.'):
         if EVALUATION_LOGGER is not None:
             num_ins_gt = np.sum(np.unique(scene_data[:, -1]) != -1)
             log = {
+                "file": filename,
                 "pred_file": pred_filename,
                 "num_pts": len(scene_data),
                 "num_pts_pred": len(scene_data[labeled_cond, :]),
@@ -315,8 +320,9 @@ def process_original_scene(scene_data, pred_filename, output_dir='.'):
             EVALUATION_LOGGER.writeline({**log, **metrics})
 
 
-def process_scene_blocks(blocks, pred_filename, output_dir='.'):
+def process_scene_blocks(filename, pred_filename, output_dir='.'):
     print("Start sub-sampled scene blocks processing")
+    blocks, _ = DataUtils.load_sampled_file(filename)
     data = np.concatenate(blocks, axis=0)
 
     # Test if needed
@@ -379,8 +385,10 @@ def process_scene_blocks(blocks, pred_filename, output_dir='.'):
         if EVALUATION_LOGGER is not None:
             num_ins_gt = np.sum(np.unique(ins_gt_all) != -1)
             log = {
+                "file": filename,
                 "pred_file": pred_filename,
                 "num_pts": len(data),
+                "num_pts_pred": len(data),
                 "num_ins_pred": num_ins_pred,
                 "num_ins_gt": num_ins_gt,
                 "cell_size": CELL_SIZE,
@@ -401,10 +409,12 @@ if __name__ == "__main__":
         print("No available file at {}".format(PATH))
         exit()
 
-    predictions = get_predictions(filenames, get_filenames(PRED, exts=['h5']))
+    # predictions = get_predictions(filenames, get_filenames(PRED, exts=['h5']))
+    predictions = get_input_pairs(filenames, get_filenames(PRED, exts=['h5']))
 
     # Create tester is needed
-    if None in predictions.values():
+    values_all = [item for values in predictions.values() for item in values]
+    if None in values_all:
         print("Create tester")
         TESTER = create_tester()
     
@@ -416,20 +426,24 @@ if __name__ == "__main__":
 
     for i, filename in enumerate(filenames):
         print("[{}/{}]".format(i+1, len(filenames)))
-        print("Processing", filename)
+        
         output_dir = dirname(abspath(filename))
-        pred_filename = predictions[filename]
+        pred_filenames = predictions[filename]
+
+        print("Processing", filename, ",", len(pred_filenames), "pred files")
 
         # Check scene file type: original or sub-sampled blocks
         # original
         try:
-            scene_data = DataUtils.load_scene_file(filename)
-            process_original_scene(scene_data, pred_filename, output_dir=output_dir)
+            DataUtils.load_scene_file(filename)
+            for pred_filename in pred_filenames:
+                process_original_scene(filename, pred_filename, output_dir=output_dir)
         # sub-sampled blocks
         except:
             try:
-                blocks, _ = DataUtils.load_sampled_file(filename)
-                process_scene_blocks(blocks, pred_filename, output_dir=output_dir)
+                DataUtils.load_sampled_file(filename)
+                for pred_filename in pred_filenames:
+                    process_scene_blocks(filename, pred_filename, output_dir=output_dir)
             except Exception as e:
                 print(e)
                 continue
