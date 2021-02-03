@@ -48,7 +48,8 @@ class Evaluator:
                  gt_labels: np.ndarray,
                  iou_threshold=0.5,
                  use_multiprocessing=True,
-                 num_workers=1):
+                 num_workers=1,
+                 verbose=False):
         """Create Evaluator
 
         Args:
@@ -57,15 +58,19 @@ class Evaluator:
             iou_threshold (float, optional): IoU threshold for evaluation. Defaults to 0.5.
             use_multiprocessing (bool, optional): If True, use multiprocessing evaluation. Defaults to True.
             num_workers (int, optional): Number of workers used in evaluation. Ignored if use_multiprocessing = False. Defaults to 1.
+            verbose (bool, optional): Print log info or not. Defaults to False.
         """
         assert len(scene_points) == len(gt_labels), 'points number of scene points and gt labels are not the same'
+
+        self.verbose = verbose
 
         # Get ground truth info
         self.pts = scene_points[:, 0:3]
         self.gt = gt_labels.flatten()
         self.gt_ins_labels, self.gt_ins_pt_ind, self.gt_ins_pt_counts = self.get_ins_indices(self.gt)
         self.gt_ins_num = len(self.gt_ins_pt_ind)
-        print('gt instances num:', self.gt_ins_num)
+        
+        if self.verbose: print('gt instances num:', self.gt_ins_num)
 
         # get bbox of gt
         self.bbox_margin = 0.01
@@ -173,6 +178,7 @@ class Evaluator:
 
         Args:
             inputs (tuple): Tuple of (point indices of predicted instance, list of point indices of ground truth instances, and a np.ndarray of point numbers of ground truth instances)
+                Notice that al the indices MUST be sorted.
 
         Returns:
             list: List of intersection point indices between predicted instance and input ground truth instances.
@@ -186,7 +192,7 @@ class Evaluator:
         inserted_ind[inserted_ind == len(ins_p)] = 0
         mask_is_in = ins_p[inserted_ind] == ins_g
 
-        splited_mask_is_in = np.split(mask_is_in, ins_g_pt_counts.cumsum())
+        splited_mask_is_in = np.split(mask_is_in, ins_g_pt_counts.cumsum()[:-1])
         intersect_pt_ind = list(
             pt_ind[mask]
             for pt_ind, mask in zip(gt_ins_pt_ind, splited_mask_is_in))
@@ -253,7 +259,7 @@ class Evaluator:
         # compute IoUs
         unions = np.tile(np.reshape(self.gt_ins_pt_counts, [1, -1]), [pr_ins_num, 1]) + \
             np.tile(np.reshape(pr_ins_pt_counts, [-1, 1]), [1, self.gt_ins_num]) - intersection
-        ious = intersection / unions
+        ious = intersection / (unions + 1e-8)
 
         # IoU >= threshold -> True Positive
         iou_maxs = ious.max(axis=1)
@@ -282,7 +288,7 @@ class Evaluator:
         # get each instance's point indices, numbers, and bbox
         _, pr_ins_pt_ind, pr_ins_pt_counts = self.get_ins_indices(pred)
         pr_ins_num = len(pr_ins_pt_ind)
-        print('pred instances num:', pr_ins_num)
+        if self.verbose: print('pred instances num:', pr_ins_num)
         pr_bboxes = []
         for pt_ind in pr_ins_pt_ind:
             pr_bboxes.append(self.get_bbox(self.pts[pt_ind, 0:3], margin=self.bbox_margin))
