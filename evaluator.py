@@ -13,7 +13,7 @@ class EvaluationLogger:
         # init items if empty
         if len(self.items) == 0:
             self.init_items(content)
-        
+
         # get output data
         line = ""
         for key in self.items:
@@ -23,22 +23,22 @@ class EvaluationLogger:
         # write
         self.file.write(line)
         self.file.flush()
-    
+
     def init_items(self, content: dict):
         for key in content:
             self.items.append(key)
-        
+
         self.items = sorted(self.items)
 
         for item in self.items:
             self.file.write(item + ",")
         self.file.write("\n")
-        
+
         print("EvaluationLogger >> Init items.")
 
     def close(self):
         self.file.close()
-        
+
 
 class Evaluator:
     """Scene Evaluator
@@ -69,7 +69,7 @@ class Evaluator:
         self.gt = gt_labels.flatten()
         self.gt_ins_labels, self.gt_ins_pt_ind, self.gt_ins_pt_counts = self.get_ins_indices(self.gt)
         self.gt_ins_num = len(self.gt_ins_pt_ind)
-        
+
         if self.verbose: print('gt instances num:', self.gt_ins_num)
 
         # get bbox of gt
@@ -157,7 +157,7 @@ class Evaluator:
             np.ndarray: IoUs with size is (number of pr_bboxes, number of gt_bboxes).
         """
         pr_gt_bbox_pairs = list(itertools.product(pr_bboxes, self.gt_bboxes))
-        
+
         if self.use_multiprocessing:
             chunksize = len(pr_gt_bbox_pairs) // self.num_workers
             with futures.ProcessPoolExecutor(self.num_workers) as pool:
@@ -166,7 +166,7 @@ class Evaluator:
             ious_bbox = []
             for pr_gt in pr_gt_bbox_pairs:
                 ious_bbox.append(Evaluator.get_bbox_iou(pr_gt))
-        
+
         ious_bbox = np.array(ious_bbox)
         ious_bbox = np.reshape(ious_bbox, [len(pr_bboxes), self.gt_ins_num])
 
@@ -228,12 +228,12 @@ class Evaluator:
             chunksize = len(inputs) // self.num_workers
             with futures.ProcessPoolExecutor(self.num_workers) as pool:
                 intersect_ind = list(pool.map(Evaluator.get_intersect_point_indices, inputs, chunksize=chunksize))
-        
+
         else:
             intersect_ind = []
             for i in inputs:
                 intersect_ind.append(Evaluator.get_intersect_point_indices(i))
-        
+
         intersect_ind = list(itertools.chain.from_iterable(intersect_ind)) # to 1-d list
 
         # get intersection points number
@@ -243,15 +243,15 @@ class Evaluator:
 
         return intersection
 
-    def get_metrics(self, intersection: np.ndarray, pr_ins_pt_counts: np.ndarray) -> tuple:
-        """Get evaluation metrics results: Precision, Recall, F1-score
+    def get_iou(self, intersection: np.ndarray, pr_ins_pt_counts: np.ndarray) -> np.ndarray:
+        """Compute IoU
 
         Args:
             intersection (np.ndarray): Number of intersection points. size = (number of predicted instances, number of ground truth instances).
             pr_ins_pt_counts (np.ndarray): Point numbers of each predicted instance.
 
         Returns:
-            tuple (float, float, float): A tuple of Precision, Recall, F1-score
+            np.ndarray: IoU (num_pred, num_gt).
         """
         # number of predicted instances
         pr_ins_num = len(pr_ins_pt_counts)
@@ -261,8 +261,22 @@ class Evaluator:
             np.tile(np.reshape(pr_ins_pt_counts, [-1, 1]), [1, self.gt_ins_num]) - intersection
         ious = intersection / (unions + 1e-8)
 
+        return ious
+
+    def get_metrics(self, iou: np.ndarray) -> tuple:
+        """Get evaluation metrics results: Precision, Recall, F1-score
+
+        Args:
+            iou (np.ndarray): IoU (num_pred, num_gt).
+
+        Returns:
+            tuple (float, float, float): A tuple of Precision, Recall, F1-score
+        """
+        # number of predicted instances
+        pr_ins_num = len(iou)
+
         # IoU >= threshold -> True Positive
-        iou_maxs = ious.max(axis=1)
+        iou_maxs = iou.max(axis=1)
         tp = np.sum(iou_maxs >= self.iou_threshold)
         fp = pr_ins_num - tp
 
@@ -286,7 +300,7 @@ class Evaluator:
         pred = pred_labels.flatten()
 
         # get each instance's point indices, numbers, and bbox
-        _, pr_ins_pt_ind, pr_ins_pt_counts = self.get_ins_indices(pred)
+        pr_ins_labels, pr_ins_pt_ind, pr_ins_pt_counts = self.get_ins_indices(pred)
         pr_ins_num = len(pr_ins_pt_ind)
         if self.verbose: print('pred instances num:', pr_ins_num)
         pr_bboxes = []
@@ -301,11 +315,24 @@ class Evaluator:
         intersection = self.get_multi_intersections(pr_ins_pt_ind, bbox_ious=bbox_ious)
 
         # compute precision, recall, and f1-score
-        precision, recall, f1_score = self.get_metrics(intersection, pr_ins_pt_counts)
+        iou = self.get_iou(intersection, pr_ins_pt_counts)
+        precision, recall, f1_score = self.get_metrics(iou)
+
+        # get TP/FP/FN predicted instances
+        iou_maxs = np.max(iou, axis=1)
+        pr_gt_ind = np.argmax(iou, axis=1)
+        tp_ind_cond = iou_maxs >= self.iou_threshold
+        fp_ind_cond = ~tp_ind_cond
+
+        fn_ind_cond = np.full((self.gt_ins_num,), True, dtype=np.bool)
+        fn_ind_cond[pr_gt_ind[tp_ind_cond]] = False
 
         results = dict()
         results["precision"] = precision
         results["recall"] = recall
         results["f1_score"] = f1_score
-        
+        results["tp"] = pr_ins_labels[tp_ind_cond]
+        results["fp"] = pr_ins_labels[fp_ind_cond]
+        results["fn"] = self.gt_ins_labels[fn_ind_cond]
+
         return results

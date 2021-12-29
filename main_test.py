@@ -206,7 +206,10 @@ def write_ins_ply(output_dir: str, xyz: np.ndarray, labels: np.ndarray, colors=N
     if PLY_WRITER is None:
         return
     
-    assert len(xyz) == len(labels) == len(colors)
+    if colors is None:
+        assert len(xyz) == len(labels)
+    else:
+        assert len(xyz) == len(labels) == len(colors)
     
     # create directories if not exist
     if not exists(output_dir):
@@ -225,7 +228,7 @@ def write_ins_ply(output_dir: str, xyz: np.ndarray, labels: np.ndarray, colors=N
     for label, pt_ind in tqdm(zip(ins_labels, ins_pt_ind)):
         if label == -1: continue
 
-        output_ins_name = join(output_dir, str(label).zfill(4) + ".ply")
+        output_ins_name = join(output_dir, str(int(label)).zfill(4) + ".ply")
         PLY_WRITER(output_ins_name, [xyz[pt_ind, 0:3], colors[pt_ind, 0:3]], ['x', 'y', 'z', 'red', 'green', 'blue'])
 
 
@@ -301,8 +304,23 @@ def process_original_scene(filename: str, pred_filename: str, output_dir='.'):
     
     # Evaluation
     if EVAL:
-        metrics = eval(scene_data[:, 0:3], scene_data[:, -1], scene_ins_pred)
-        print("Precision: {} / Recall: {} / F1-score: {}".format(metrics['precision'], metrics['recall'], metrics['f1_score']))
+        results = eval(scene_data[:, 0:3], scene_data[:, -1], scene_ins_pred)
+        print("Precision: {} / Recall: {} / F1-score: {}".format(results['precision'], results['recall'], results['f1_score']))
+
+        tp_cond = np.full_like(scene_ins_pred, False, dtype=np.bool)
+        for tp_ins_label in tqdm(results["tp"]):
+            tp_cond = tp_cond | (scene_ins_pred == tp_ins_label)
+        write_ins_ply(join(output_ply_basename, "TP"), scene_data[tp_cond, 0:3], scene_ins_pred[tp_cond], colors=scene_ins_colors[tp_cond, :])
+
+        fp_cond = np.full_like(scene_ins_pred, False, dtype=np.bool)
+        for fp_ins_label in tqdm(results["fp"]):
+            fp_cond = fp_cond | (scene_ins_pred == fp_ins_label)
+        write_ins_ply(join(output_ply_basename, "FP"), scene_data[fp_cond, 0:3], scene_ins_pred[fp_cond], colors=scene_ins_colors[fp_cond, :])
+
+        fn_cond = np.full_like(scene_data[:, -1], False, dtype=np.bool)
+        for fn_ins_label in tqdm(results["fn"]):
+            fn_cond = fn_cond | (scene_data[:, -1] == fn_ins_label)
+        write_ins_ply(join(output_ply_basename, "FN"), scene_data[fn_cond, 0:3], scene_data[fn_cond, -1], colors=None)
 
         if EVALUATION_LOGGER is not None:
             num_ins_gt = np.sum(np.unique(scene_data[:, -1]) != -1)
@@ -315,9 +333,12 @@ def process_original_scene(filename: str, pred_filename: str, output_dir='.'):
                 "num_ins_gt": num_ins_gt,
                 "cell_size": CELL_SIZE,
                 "overlap_cell_thres": OVERLAP_CELL_THRES,
-                "iou_thres": IOU_THRES }
+                "iou_thres": IOU_THRES,
+                "precision": results['precision'],
+                "recall": results['recall'],
+                "f1_score": results['f1_score'] }
             
-            EVALUATION_LOGGER.writeline({**log, **metrics})
+            EVALUATION_LOGGER.writeline(log)
 
 
 def process_scene_blocks(filename, pred_filename, output_dir='.'):
@@ -412,7 +433,7 @@ if __name__ == "__main__":
     # predictions = get_predictions(filenames, get_filenames(PRED, exts=['h5']))
     predictions = get_input_pairs(filenames, get_filenames(PRED, exts=['h5']))
 
-    # Create tester is needed
+    # Create tester if needed
     values_all = [item for values in predictions.values() for item in values]
     if None in values_all:
         print("Create tester")

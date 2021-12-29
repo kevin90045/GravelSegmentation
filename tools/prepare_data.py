@@ -29,7 +29,7 @@ parser.add_argument("--bound", nargs="+", type=float, default=[-sys.float_info.m
 parser.add_argument("--format", type=str, default="h5", help="data format")
 parser.add_argument("--idis", help="use inverse density importance sampling", action="store_true")
 parser.add_argument("-mp", "--multiprocessing", help="use multiprocessing or not", action="store_true")
-parser.add_argument("--num_workers", type=int, default=1, help="threads used for multiprocessing") 
+parser.add_argument("--num_workers", type=int, default=1, help="threads used for multiprocessing")
 parser.add_argument("--start_index", type=int, default=0, help="the startig index of output file")
 parser.add_argument("--save_original", help="save original scene data as h5", action="store_true")
 args = parser.parse_args()
@@ -60,7 +60,7 @@ class Logger:
         """
         self.output_filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") if output_filename is None else output_filename
         self.log = open(self.output_filename + ".txt", "w")
-    
+
     def write(self, log_str):
         """Write log
 
@@ -69,7 +69,7 @@ class Logger:
         """
         self.log.write(log_str + "\n")
         self.log.flush()
-    
+
     def close(self):
         """Close log file
         """
@@ -100,6 +100,7 @@ def scene_to_blocks(scene_data, num_points, size=1.0, stride=0.5, threshold=100,
     Returns:
         numpy.ndarray: Nx9: block id, num_points, global coordinates, block centered coordinates, room normalized coordinates, instance labels
     """
+    from tqdm import tqdm
     scene_data[:, 0:3] = scene_data[:, 0:3] - np.amin(scene_data[:, 0:3], axis=0, keepdims=True)
 
     limit = np.amax(scene_data[:, 0:3], axis=0)
@@ -107,13 +108,14 @@ def scene_to_blocks(scene_data, num_points, size=1.0, stride=0.5, threshold=100,
     depth = int(np.ceil((limit[1] - size) / stride)) + 1
     cells = [(x * stride, y * stride) for x in range(width) for y in range(depth)]
     blocks = []
-    for (x, y) in cells:
+    for (x, y) in tqdm(cells):
         xcond = (scene_data[:, 0] <= x + size) & (scene_data[:, 0] >= x)
         ycond = (scene_data[:, 1] <= y + size) & (scene_data[:, 1] >= y)
         cond = xcond & ycond
 
         if np.sum(cond) < threshold:
             continue
+
         block = scene_data[cond, :]
 
         if block.shape[0] is 0:
@@ -127,7 +129,7 @@ def scene_to_blocks(scene_data, num_points, size=1.0, stride=0.5, threshold=100,
     else:
         for block_id, block in enumerate(blocks):
             blocks[block_id] = DataUtils.sample_data(block, num_points, min_instance_points_num=50, use_idis=use_idis)
-            
+
     blocks = np.stack(blocks, axis=0)
     # A batch should have shape of BxNx14, where
     # [0:3] - global coordinates
@@ -222,13 +224,13 @@ if __name__ == "__main__":
             # scene to blocks
             blocks = scene_to_blocks(scene_data, NUM_POINT, BLOCK_SIZE, STRIDE, 1, USE_IDIS, USE_MULTIPROCESSING, NUM_WORKERS)
             print_log("Number of points after sampling: {}".format(blocks.shape[0] * blocks.shape[1]))
-            
+
             # output
             if LOAD_DIR:
                 output_basename = os.path.join(scene_path, "scene_" + str(scene_count).zfill(4))
             else:
                 output_basename = os.path.join(os.path.dirname(scene_path), "scene_" + str(scene_count).zfill(4))
-            
+
             output_batch_filename = output_basename + ".h5"
             print_log("Saving batch to {}...".format(output_batch_filename))
             save_batch_h5(output_batch_filename, blocks)
@@ -248,11 +250,10 @@ if __name__ == "__main__":
     if len(failed_scenes) > 0:
         print("\nFailed scenes:")
         logger.write("\nFailed Scenes:")
-    
+
     for failed_scene_filename in failed_scenes:
         print(failed_scene_filename)
         logger.write(failed_scene_filename)
-    
+
     print_log("Done")
     logger.close()
-    

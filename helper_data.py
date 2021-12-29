@@ -62,7 +62,7 @@ class DataLoader:
 
         self.ins_max_num = configs.ins_max_num
         self.batch_size = batch_size
-        self.total_batch_num = DataLoader.get_total_batch_num(self.length, self.batch_size)        
+        self.total_batch_num = DataLoader.get_total_batch_num(self.length, self.batch_size)
 
         # for data pipeline
         self.epoch = epoch
@@ -78,12 +78,12 @@ class DataLoader:
 
     def __len__(self):
         return len(self.length)
-    
+
     def init_data_pipeline(self):
         """Initialize data pipeline. Must be called before calling get_batch()
         """
         self.total_batch_num = DataLoader.get_total_batch_num(self.length, self.batch_size)
-                
+
         self.capacity = 30
 
         self.data_sample_queue = multiprocessing.Manager().Queue(3) # max size: 3 scenes
@@ -117,7 +117,7 @@ class DataLoader:
                     all_files.extend(sorted(glob.glob(os.path.join(self.root_folder, dir, '*.h5'))))
         else:
             all_files.extend(sorted(self.filepaths))
-        
+
         # compute number of all blocks
         length = 0
         for file in tqdm(all_files):
@@ -156,12 +156,12 @@ class DataLoader:
 
         # initialize bounding boxes and masks
         gt_bbvert_padded = np.zeros((ins_max_num, 2, 3), dtype=np.float32)
-        gt_pmask = np.zeros((ins_max_num, pc.shape[0]), dtype=np.float32)        
-        
+        gt_pmask = np.zeros((ins_max_num, pc.shape[0]), dtype=np.float32)
+
         # get unique instance labels, point indices of each instance, point number of each instance
         unique_ins_labels, pt_ins_ind, ins_pt_counts = np.unique(ins_labels, return_inverse=True, return_counts=True, axis=0)
         ins_pt_ind = np.split(np.argsort(pt_ins_ind), np.cumsum(ins_pt_counts[:-1]))
-        
+
         for count, (ins_ind, pt_ind) in enumerate(zip(unique_ins_labels, ins_pt_ind)):
             # only consider label >= 0
             if ins_ind <= -1:
@@ -171,7 +171,7 @@ class DataLoader:
             if count >= ins_max_num:
                 print('Ignored! more than max instances:', len(unique_ins_labels))
                 continue
-            
+
             # create one-hot point mask
             ins_labels_tp = np.zeros(ins_labels.shape, dtype=np.int8).reshape(-1)
             ins_labels_tp[pt_ind] = 1
@@ -210,8 +210,8 @@ class DataLoader:
             pc_xyz[block_id] = DataUtils.normalize_xyz(pc_xyz[block_id])
 
             # reserved for final visualization
-            ori_xyz.append(pc_xyz[block_id, :, 0:3].copy()) 
-            
+            ori_xyz.append(pc_xyz[block_id, :, 0:3].copy())
+
             # get bounding box vertices and point masks
             bbvert_padded_labels_single, pmask_padded_labels_single = DataLoader.get_bbvert_pmask_labels(
                 pc_xyz[block_id],
@@ -251,7 +251,7 @@ class DataLoader:
             datalabel = DataLoader.load_fixed_points(input_file, ins_max_num)
             return datalabel
 
-        for ep in range(epoch):            
+        for ep in range(epoch):
             if shuffle:
                 np.random.seed(ep)
                 np.random.shuffle(input_list)
@@ -337,7 +337,7 @@ class DataLoader:
                     ins_labels_list = list()
                     bbvert_padded_labels_list = list()
                     pmask_padded_labels_list = list()
-                
+
                 # directly put the last batch into queue
                 # so the batch size of the last batch may be different to previous batches
                 # it should be considered when training with multiple GPUs
@@ -374,7 +374,7 @@ class DataLoader:
         """
         if not hasattr(self, 'producer_process') or not hasattr(self, 'consumer_process'):
             raise Exception('Please call init_data_pipeline() first!')
-        
+
         bat_pc, bat_ins_labels, bat_bbvert_padded_labels, bat_pmask_padded_labels = self.data_queue.get()
         return bat_pc, bat_ins_labels, bat_bbvert_padded_labels, bat_pmask_padded_labels
 
@@ -454,8 +454,16 @@ class DataUtils:
         neigh = NearestNeighbors(radius=search_radius)
         neigh.fit(data[:,0:3])
 
-        rng = neigh.radius_neighbors(data[:,0:3], return_distance=False)
-        rng_counts = [len(n) for n in rng]
+        batch_size = 100000
+        total_batch = int(math.ceil(len(data) / batch_size))
+        rng_counts = []
+        for i in range(total_batch):
+            query_pts = data[i*batch_size:(i+1)*batch_size, 0:3]
+            rng = neigh.radius_neighbors(query_pts, return_distance=False)
+            rng_counts.extend([len(n) for n in rng])
+
+        # rng = neigh.radius_neighbors(data[:,0:3], return_distance=False)
+        #rng_counts = [len(n) for n in rng]
         rng_counts = np.asarray(rng_counts)
 
         order = np.argsort(rng_counts)
@@ -472,12 +480,12 @@ class DataUtils:
         else:
             low_density_pt_ind = order[:num_low_density_pt]
             high_density_pt_ind = order[num_low_density_pt:]
-            
+
             low_density_data = data[low_density_pt_ind, :]
             sampled_high_density_data = DataUtils.random_sample(data[high_density_pt_ind, :], num_samples=num_random_sample_pt)
 
             sampled_data = np.concatenate([low_density_data, sampled_high_density_data], axis=0)
-        
+
         return sampled_data
 
     @staticmethod
@@ -504,7 +512,7 @@ class DataUtils:
         for label, pt_counts, pt_ind in zip(ins_labels, ins_pt_counts, ins_pt_ind):
             ins_pt_xyz = data[pt_ind, 0:3]
             bbox_size = np.max(ins_pt_xyz, axis=0) - np.min(ins_pt_xyz, axis=0)
-            
+
             if filter_bbox_size is not None and np.any(np.equal(bbox_size, filter_bbox_size)):
                 continue
             if filter_ins_pt_counts is not None and pt_counts < filter_ins_pt_counts:
@@ -512,7 +520,7 @@ class DataUtils:
 
             kept_indices.extend(pt_ind)
             kept_labels.append(label)
-        
+
         return data[kept_indices, :]
 
     @staticmethod
@@ -538,7 +546,7 @@ class DataUtils:
     ###########################################
     ############### Data Loader ###############
     ###########################################
-    
+
     @staticmethod
     def load_xyz(scene_filepath: str) -> np.ndarray:
         """Load xyz file
@@ -608,10 +616,10 @@ class DataUtils:
         Returns:
             np.ndarray: Loaded data.
         """
-        
+
         if data_format is None:
             data_format = os.path.splitext(scene_filepath)[-1][1:]
-            
+
         if data_format == 'xyz':
             scene = DataUtils.load_xyz(scene_filepath)
 
@@ -680,9 +688,9 @@ class DataUtils:
         points = fin['points'][:]
         ins_labels = fin['labels'][:]
         fin.close()
-        
+
         data = np.concatenate([coords, points[:, :, 3:6]], axis=-1)  # global coords and normalized coords in scenes
-        
+
         return data, ins_labels
 
     @staticmethod
@@ -712,7 +720,7 @@ class DataUtils:
             pts.append(data[:,0:3])
             ins_gt.append(data[:,3].astype(np.int32))
             ins_pred.append(data[:,4].astype(np.int32))
-        
+
         fin.close()
 
         return pts, ins_gt, ins_pred
