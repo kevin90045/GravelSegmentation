@@ -1,0 +1,13 @@
+python3 tools/prepare_data.py \
+--root=/home/chen/Projects/Gravel/data/data_gravel_v4.3/objs/scene_061/helios/points \
+--dir \
+--num_points=8192 \
+--block_size=0.5 \
+--stride=0.25 \
+--bound -3 -3 3 3 \
+--format=xyz \
+--start_index=0 \
+--idis \
+--save_original \
+-mp \
+--num_workers 4
